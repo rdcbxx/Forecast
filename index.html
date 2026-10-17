@@ -129,6 +129,7 @@ input[type=text]{flex:1;min-width:0;font:inherit;font-size:16px;padding:10px 12p
 .radar.full .rmap{flex:1;height:auto}
 body.noscroll{overflow:hidden}
 .leaflet-container{font:inherit}
+.leaflet-control-attribution{font-size:10px!important;line-height:1.4}
 
 details{margin-top:24px}
 summary{cursor:pointer;font-weight:650;padding:6px 0;list-style-position:inside}
@@ -237,7 +238,7 @@ summary{cursor:pointer;font-weight:650;padding:6px 0;list-style-position:inside}
     <div class="actions">
       <button id="againBtn" type="button">Refresh</button>
     </div>
-    <p class="foot">Each hour is rated from the average of all sources. Avoid: rain chance 60% or more, 0.1 in of rain or more, most forecasts showing rain, storms in two or more sources, or gusts of 35 mph or more. Watch: rain chance 30% or more, two or more forecasts showing rain, any storm signal, gusts of 25 mph or more, or 45° and colder. Weather data from <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, the <a href="https://www.weather.gov/" target="_blank" rel="noopener">National Weather Service</a> and Google; place search and map from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> and <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>; radar from NOAA via the <a href="https://mesonet.agron.iastate.edu/" target="_blank" rel="noopener">Iowa Environmental Mesonet</a>.</p>
+    <p class="foot">Each hour is rated from the average of all sources. Avoid: rain chance 60% or more, 0.1 in of rain or more, most forecasts showing rain, storms in two or more sources, or gusts of 35 mph or more. Watch: rain chance 30% or more, two or more forecasts showing rain, any storm signal, gusts of 25 mph or more, or 45° and colder. Weather data from <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, the <a href="https://www.weather.gov/" target="_blank" rel="noopener">National Weather Service</a> and Google; place search from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>; map tiles from Esri; radar from NOAA via the <a href="https://mesonet.agron.iastate.edu/" target="_blank" rel="noopener">Iowa Environmental Mesonet</a>.</p>
   </section>
 </main>
 
@@ -803,17 +804,16 @@ function ensureMap(lat, lon){
   if (R.map) return true;
   if (!window.L){ $("rNote").textContent = "The radar map couldn’t load. Check your connection and tap Refresh."; return false; }
   const dark = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches;
-  const style = dark ? "dark" : "light";
+  const tone = dark ? "Dark" : "Light";
+  const esri = layer => `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_${tone}_Gray_${layer}/MapServer/tile/{z}/{y}/{x}`;
   R.map = L.map("rMap", { zoomControl:false, dragging:false, touchZoom:false, scrollWheelZoom:false,
     doubleClickZoom:false, boxZoom:false, keyboard:false, tap:false }).setView([lat, lon], 8);
   R.map.attributionControl.setPrefix(false);
-  L.tileLayer(`https://{s}.basemaps.cartocdn.com/${style}_nolabels/{z}/{x}/{y}{r}.png`,
-    { subdomains:"abcd", maxZoom:11, zIndex:1, attribution:"© OpenStreetMap © CARTO, radar NOAA/IEM" }).addTo(R.map);
+  L.tileLayer(esri("Base"), { maxZoom:11, zIndex:1, attribution:"Map © Esri, radar NOAA/IEM" }).addTo(R.map);
   R.map.createPane("labels");
   R.map.getPane("labels").style.zIndex = 650;
   R.map.getPane("labels").style.pointerEvents = "none";
-  L.tileLayer(`https://{s}.basemaps.cartocdn.com/${style}_only_labels/{z}/{x}/{y}{r}.png`,
-    { subdomains:"abcd", maxZoom:11, pane:"labels" }).addTo(R.map);
+  L.tileLayer(esri("Reference"), { maxZoom:11, pane:"labels" }).addTo(R.map);
   R.marker = L.circleMarker([lat, lon], { radius:7, color:"#FFFFFF", weight:2, fillColor:"#0072B2", fillOpacity:1 }).addTo(R.map);
   R.map.on("click", () => { if (!R.full) setRadarFull(true); });
   return true;
@@ -884,8 +884,8 @@ async function updateRadar(lat, lon){
   const pct = frames.length > 1 ? ((R.split - 1) / (frames.length - 1)) * 100 : 100;
   slider.style.setProperty("--split", pct + "%");
   $("rNowTick").style.left = pct + "%";
-  const fcCount = frames.length - R.split;
-  $("rEndTick").textContent = fcCount ? "+" + Math.round(fcCount * 15 / 60 * 10) / 10 + " h" : "";
+  const last = frames[frames.length - 1];
+  $("rEndTick").textContent = last.fc ? last.label.replace("Forecast ", "") : "";
   // only the latest radar loads until Play is tapped
   R.layers[R.split - 1] = radarLayer(frames[R.split - 1].name).addTo(R.map);
   showFrame(R.split - 1);
