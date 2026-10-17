@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Forecast">
+<title>Forecast average</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌦️</text></svg>">
+<style>
+:root{
+  color-scheme: light;
+  --bg:#E8F1F3; --surface:#FFFFFF; --ink:#12313B; --muted:#4F6B73;
+  --line:#C9DADF; --track:#D8E6EA; --accent:#0072B2; --accent-ink:#FFFFFF;
+  --avg:#D55E00; --warn:#8A5200; --err:#B4351F;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    color-scheme: dark;
+    --bg:#0D1C21; --surface:#14282E; --ink:#E2EEF0; --muted:#93AEB5;
+    --line:#24414A; --track:#21393F; --accent:#56B4E9; --accent-ink:#0D1C21;
+    --avg:#EE8A45; --warn:#E6B566; --err:#F08A72;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink)}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.num{font-family:ui-rounded,"SF Pro Rounded",system-ui,sans-serif;font-variant-numeric:tabular-nums}
+main{max-width:560px;margin:0 auto;padding:24px 18px 48px}
+h1{font-size:1.6rem;line-height:1.2;margin:0 0 6px;font-weight:650;letter-spacing:-0.01em}
+h2{font-size:1.05rem;margin:32px 0 10px;font-weight:650}
+.sub{margin:0;color:var(--muted);font-size:.95rem}
+.locate{margin-top:20px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px}
+button{font:inherit;cursor:pointer;border-radius:10px;padding:10px 14px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:600}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button:disabled{opacity:.55;cursor:not-allowed}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+#geoBtn{width:100%;display:flex;align-items:center;justify-content:center;gap:8px}
+.or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:.85rem;margin:12px 0}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+.row{display:flex;gap:8px}
+input[type=text]{flex:1;min-width:0;font:inherit;font-size:16px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.msg{margin:10px 0 0;font-size:.9rem;color:var(--muted);min-height:1.2em}
+.msg.err{color:var(--err)}
+
+.hero{margin-top:26px}
+.place{margin:0;font-weight:600;font-size:1.05rem}
+.big{display:flex;align-items:flex-start;line-height:1;margin:6px 0 4px}
+.big .t{font-size:clamp(72px,22vw,120px);font-weight:300;letter-spacing:-0.04em}
+.big .u{font-size:1.4rem;margin-top:14px;color:var(--muted)}
+.cond{margin:0;font-size:1.1rem}
+.basis{margin:4px 0 0;color:var(--muted);font-size:.9rem}
+
+.strips{margin-top:18px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:6px 16px}
+.strip{padding:12px 0;border-bottom:1px solid var(--line)}
+.strip:last-child{border-bottom:0}
+.shead{display:flex;align-items:baseline;gap:10px}
+.slbl{font-weight:600;min-width:92px}
+.sval{font-size:1.25rem;font-weight:600}
+.srng{margin-left:auto;color:var(--muted);font-size:.82rem;text-align:right}
+.track{position:relative;margin-top:8px;border-radius:8px;background:var(--track)}
+.band{position:absolute;top:0;bottom:0;background:var(--line);border-radius:8px}
+.avgline{position:absolute;top:-3px;bottom:-3px;width:3px;margin-left:-1.5px;background:var(--avg);border-radius:2px}
+.dot{position:absolute;width:14px;height:14px;margin-left:-7px;border-radius:50%;border:2px solid var(--surface);box-shadow:0 0 0 1px var(--muted)}
+.scale{display:flex;justify-content:space-between;color:var(--muted);font-size:.72rem;margin-top:3px}
+
+.sources{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:16px}
+.sources li{display:flex;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.sources li:last-child{border-bottom:0}
+.sw{flex:none;width:14px;height:14px;border-radius:50%;margin-top:4px;box-shadow:0 0 0 1px var(--muted)}
+.sbody{flex:1;min-width:0}
+.stop{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.sname{font-weight:600}
+.status{font-size:.82rem;color:var(--muted);white-space:nowrap}
+.status.miss{color:var(--warn)}
+.status.err{color:var(--err)}
+.svals{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:3px;font-size:.92rem}
+.svals b{font-weight:600}
+.snote{margin:3px 0 0;font-size:.82rem;color:var(--muted)}
+.pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:1px;animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
+@media (prefers-reduced-motion: reduce){.pulse{animation:none;opacity:.7}}
+.foot{margin-top:18px;font-size:.82rem;color:var(--muted)}
+.foot a{color:var(--accent)}
+.actions{display:flex;gap:8px;margin-top:14px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Forecast average</h1>
+    <p class="sub">Averages today’s forecast from the National Weather Service and six of the world’s major weather models.</p>
+  </header>
+
+  <section class="locate" aria-label="Choose a location">
+    <button id="geoBtn" class="primary" type="button">
+      <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/></svg>
+      Use my location
+    </button>
+    <div class="or">or</div>
+    <div class="row">
+      <input id="place" type="text" placeholder="City, ZIP or address" autocomplete="off" enterkeyhint="search" aria-label="City, ZIP or address">
+      <button id="goBtn" type="button">Check forecast</button>
+    </div>
+    <p id="locMsg" class="msg" aria-live="polite"></p>
+  </section>
+
+  <section id="results" hidden aria-live="polite">
+    <div class="hero">
+      <p id="placeName" class="place"></p>
+      <div class="big num"><span id="heroT" class="t">--</span><span class="u">°F</span></div>
+      <p id="cond" class="cond"></p>
+      <p id="basis" class="basis"></p>
+    </div>
+
+    <div id="strips" class="strips" hidden></div>
+
+    <h2>Sources</h2>
+    <ul id="sources" class="sources"></ul>
+
+    <div class="actions">
+      <button id="againBtn" type="button">Refresh</button>
+    </div>
+    <p class="foot">The orange line on each bar is the average and each dot is one source, so a wide spread means the forecasts disagree. Apple, Google, AccuWeather and The Weather Channel draw on these same models and add their own adjustments. Weather data from <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> and the <a href="https://www.weather.gov/" target="_blank" rel="noopener">National Weather Service</a>; place search from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>.</p>
+  </section>
+</main>
+
+<script>
+const SOURCES = [
+  { id:"nws",                  name:"National Weather Service",   color:"var(--ink)", kind:"nws" },
+  { id:"ecmwf_ifs025",         name:"European model (ECMWF)",     color:"#E69F00" },
+  { id:"gfs_seamless",         name:"U.S. model (GFS)",           color:"#56B4E9" },
+  { id:"icon_seamless",        name:"German model (ICON)",        color:"#009E73" },
+  { id:"gem_seamless",         name:"Canadian model (GEM)",       color:"#F0E442" },
+  { id:"ukmo_seamless",        name:"UK Met Office model",        color:"#0072B2" },
+  { id:"meteofrance_seamless", name:"French model (Météo-France)",color:"#CC79A7" }
+];
+
+const METRICS = [
+  { key:"temp_now",   label:"Now",         unit:"°",    kind:"temp", dp:0 },
+  { key:"feels_like", label:"Feels like",  unit:"°",    kind:"temp", dp:0 },
+  { key:"high",       label:"High",        unit:"°",    kind:"temp", dp:0 },
+  { key:"low",        label:"Low",         unit:"°",    kind:"temp", dp:0 },
+  { key:"rain_chance",label:"Rain chance", unit:"%",    kind:"pct",  dp:0 },
+  { key:"rain_amount",label:"Rain amount", unit:" in",  kind:"rain", dp:2 },
+  { key:"humidity",   label:"Humidity",    unit:"%",    kind:"pct",  dp:0 },
+  { key:"wind_mph",   label:"Wind",        unit:" mph", kind:"wind", dp:0 },
+  { key:"uv_index",   label:"UV index",    unit:"",     kind:"uv",   dp:1 }
+];
+
+const WMO = {0:"Clear",1:"Mostly clear",2:"Partly cloudy",3:"Cloudy",45:"Fog",48:"Freezing fog",
+  51:"Light drizzle",53:"Drizzle",55:"Heavy drizzle",56:"Freezing drizzle",57:"Freezing drizzle",
+  61:"Light rain",63:"Rain",65:"Heavy rain",66:"Freezing rain",67:"Freezing rain",
+  71:"Light snow",73:"Snow",75:"Heavy snow",77:"Snow grains",80:"Light showers",81:"Showers",82:"Heavy showers",
+  85:"Snow showers",86:"Heavy snow showers",95:"Thunderstorms",96:"Thunderstorms with hail",99:"Thunderstorms with hail"};
+
+const $ = id => document.getElementById(id);
+const STORE = "forecast-average:last";
+let run = { id:0, lat:null, lon:null, label:null, results:{}, at:null };
+
+function esc(s){ return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function toNum(v){
+  if (typeof v === "number" && isFinite(v)) return v;
+  if (typeof v === "string"){ const n = parseFloat(v); return isFinite(n) ? n : null; }
+  return null;
+}
+function fmt(v, dp){ return v === null || v === undefined ? "--" : (dp ? v.toFixed(dp) : Math.round(v).toString()); }
+function setMsg(text, isErr){ const m = $("locMsg"); m.textContent = text || ""; m.classList.toggle("err", !!isErr); }
+function setBusy(b){ $("geoBtn").disabled = b; $("goBtn").disabled = b; $("againBtn").disabled = b; }
+function save(obj){ try { localStorage.setItem(STORE, JSON.stringify(obj)); } catch(e) {} }
+function load(){ try { return JSON.parse(localStorage.getItem(STORE) || "null"); } catch(e) { return null; } }
+
+async function getJSON(url){
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    let body = null;
+    try { body = await res.json(); } catch(e) {}
+    if (!res.ok){
+      const reason = body && (body.reason || body.detail || body.title);
+      const err = new Error(reason || ("Request failed (" + res.status + ")"));
+      err.status = res.status; throw err;
+    }
+    return body;
+  } catch(e) {
+    if (e.name === "AbortError") throw new Error("Took too long to respond.");
+    throw e;
+  } finally { clearTimeout(timer); }
+}
+
+// ---------- places ----------
+function labelFrom(a){
+  if (!a) return null;
+  const city = a.city || a.town || a.village || a.hamlet || a.suburb || a.county;
+  return [city, a.state || a.country].filter(Boolean).join(", ") || null;
+}
+async function geocode(q){
+  try {
+    const r = await getJSON("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&q=" + encodeURIComponent(q));
+    if (r && r.length) return { lat:+r[0].lat, lon:+r[0].lon, label: labelFrom(r[0].address) || r[0].display_name };
+  } catch(e) {}
+  const name = q.split(",")[0].trim();
+  const g = await getJSON("https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&format=json&name=" + encodeURIComponent(name));
+  if (g && g.results && g.results.length){
+    const x = g.results[0];
+    return { lat:x.latitude, lon:x.longitude, label:[x.name, x.admin1].filter(Boolean).join(", ") };
+  }
+  return null;
+}
+async function reverse(lat, lon){
+  try {
+    const r = await getJSON(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=14&lat=${lat}&lon=${lon}`);
+    return labelFrom(r && r.address);
+  } catch(e) { return null; }
+}
+
+// ---------- sources ----------
+async function fetchModel(src, lat, lon){
+  const url = "https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon +
+    "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code" +
+    "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,uv_index_max" +
+    "&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=1&models=" + src.id;
+  const j = await getJSON(url);
+  const pick = (obj, key) => {
+    if (!obj) return null;
+    let v = obj[key]; if (v === undefined) v = obj[key + "_" + src.id];
+    if (Array.isArray(v)) v = v[0];
+    return toNum(v);
+  };
+  const vals = {
+    temp_now: pick(j.current, "temperature_2m"),
+    feels_like: pick(j.current, "apparent_temperature"),
+    humidity: pick(j.current, "relative_humidity_2m"),
+    wind_mph: pick(j.current, "wind_speed_10m"),
+    high: pick(j.daily, "temperature_2m_max"),
+    low: pick(j.daily, "temperature_2m_min"),
+    rain_chance: pick(j.daily, "precipitation_probability_max"),
+    rain_amount: pick(j.daily, "precipitation_sum"),
+    uv_index: pick(j.daily, "uv_index_max")
+  };
+  const code = pick(j.current, "weather_code");
+  return { vals, condition: code !== null ? (WMO[code] || null) : null };
+}
+
+async function fetchNWS(lat, lon){
+  let p;
+  try { p = await getJSON(`https://api.weather.gov/points/${lat.toFixed(4)},${lon.toFixed(4)}`); }
+  catch(e) { if (e.status === 404) throw new Error("Covers U.S. locations only."); throw e; }
+  const [daily, hourly] = await Promise.all([getJSON(p.properties.forecast), getJSON(p.properties.forecastHourly)]);
+  const hp = (hourly.properties.periods || [])[0] || {};
+  const dp = daily.properties.periods || [];
+  const toF = (t, u) => t === null || t === undefined ? null : (u === "C" ? t * 9 / 5 + 32 : t);
+  const today = (hp.startTime || "").slice(0, 10);
+  const dayP = dp.find(x => x.isDaytime && x.startTime.slice(0, 10) === today);
+  const nightP = dp.find(x => !x.isDaytime);
+  const pops = dp.slice(0, 2).map(x => (x.probabilityOfPrecipitation && x.probabilityOfPrecipitation.value) || 0);
+  const wind = (hp.windSpeed || "").match(/\d+/g);
+  return {
+    vals: {
+      temp_now: toF(toNum(hp.temperature), hp.temperatureUnit),
+      feels_like: null,
+      humidity: toNum(hp.relativeHumidity && hp.relativeHumidity.value),
+      wind_mph: wind ? Math.max(...wind.map(Number)) : null,
+      high: dayP ? toF(toNum(dayP.temperature), dayP.temperatureUnit) : null,
+      low: nightP ? toF(toNum(nightP.temperature), nightP.temperatureUnit) : null,
+      rain_chance: dp.length ? Math.max(...pops) : null,
+      rain_amount: null,
+      uv_index: null
+    },
+    condition: hp.shortForecast || null
+  };
+}
+
+async function checkSource(src, myRun){
+  try {
+    const r = src.kind === "nws" ? await fetchNWS(run.lat, run.lon) : await fetchModel(src, run.lat, run.lon);
+    if (myRun !== run.id) return;
+    const any = METRICS.some(m => r.vals[m.key] !== null);
+    run.results[src.id] = { status: any ? "ok" : "miss", vals:r.vals, condition:r.condition,
+      note: any ? null : "No forecast for this spot." };
+  } catch(e) {
+    if (myRun !== run.id) return;
+    run.results[src.id] = { status:"err", note: e.message || "Couldn’t load." };
+  }
+  render();
+  if (SOURCES.every(s => run.results[s.id].status !== "pending")){ run.at = new Date(); setBusy(false); render(); }
+}
+
+function start(lat, lon, label){
+  run = { id: run.id + 1, lat, lon, label, results:{}, at:null };
+  SOURCES.forEach(s => run.results[s.id] = { status:"pending" });
+  $("results").hidden = false;
+  setBusy(true);
+  render();
+  SOURCES.forEach(s => checkSource(s, run.id));
+}
+
+// ---------- averaging ----------
+function entries(key){
+  return SOURCES.map(s => {
+    const r = run.results[s.id];
+    return { s, v: r && r.status === "ok" ? r.vals[key] : null };
+  }).filter(x => x.v !== null);
+}
+function averaged(key){
+  const list = entries(key);
+  if (!list.length) return null;
+  return { avg: list.reduce((t, x) => t + x.v, 0) / list.length, n: list.length };
+}
+
+// ---------- rendering ----------
+function render(){
+  const res = run.results;
+  const done = SOURCES.filter(s => res[s.id].status !== "pending").length;
+  const okCount = SOURCES.filter(s => res[s.id].status === "ok").length;
+
+  $("placeName").textContent = run.label || "Your location";
+
+  const nowA = averaged("temp_now"), highA = averaged("high");
+  const hero = nowA || highA;
+  $("heroT").textContent = hero ? Math.round(hero.avg) : "--";
+
+  const conds = SOURCES.map(s => res[s.id].status === "ok" ? res[s.id].condition : null).filter(Boolean);
+  const counts = {};
+  conds.forEach(c => { const k = c.trim().toLowerCase(); counts[k] = counts[k] ? { c:counts[k].c, n:counts[k].n + 1 } : { c, n:1 }; });
+  const top = Object.values(counts).sort((a, b) => b.n - a.n)[0];
+  const prefix = !nowA && highA ? "Today’s high. " : "";
+  $("cond").textContent = prefix + (top ? top.c : "");
+
+  let basis;
+  if (done < SOURCES.length) basis = `Loading ${done} of ${SOURCES.length} sources…`;
+  else if (!okCount) basis = "No source returned a forecast. Try a nearby city.";
+  else basis = `Average of ${hero ? hero.n : okCount} ${hero && hero.n === 1 ? "source" : "sources"}. Updated ${run.at.toLocaleTimeString("en-US", { hour:"numeric", minute:"2-digit" })}.`;
+  $("basis").textContent = basis;
+
+  renderStrips();
+  renderSources();
+}
+
+function renderStrips(){
+  const box = $("strips");
+  const tempVals = METRICS.filter(m => m.kind === "temp").flatMap(m => entries(m.key).map(x => x.v));
+  let tLo = 0, tHi = 100;
+  if (tempVals.length){
+    tLo = Math.floor(Math.min(...tempVals) - 3); tHi = Math.ceil(Math.max(...tempVals) + 3);
+    if (tHi - tLo < 8){ const mid = (tHi + tLo) / 2; tLo = Math.floor(mid - 4); tHi = Math.ceil(mid + 4); }
+  }
+
+  const html = METRICS.map(m => {
+    const list = entries(m.key);
+    if (!list.length) return "";
+    const a = averaged(m.key);
+    const vs = list.map(x => x.v);
+    const mn = Math.min(...vs), mx = Math.max(...vs);
+    let d0, d1;
+    if (m.kind === "temp"){ d0 = tLo; d1 = tHi; }
+    else if (m.kind === "pct"){ d0 = 0; d1 = 100; }
+    else if (m.kind === "rain"){ d0 = 0; d1 = Math.max(0.5, Math.ceil(mx * 1.25 * 10) / 10); }
+    else if (m.kind === "wind"){ d0 = 0; d1 = Math.max(20, Math.ceil(mx + 5)); }
+    else { d0 = 0; d1 = Math.max(11, Math.ceil(mx + 1)); }
+    const pos = v => Math.max(0, Math.min(100, ((v - d0) / (d1 - d0)) * 100));
+
+    const placed = [];
+    list.slice().sort((p, q) => p.v - q.v).forEach(x => {
+      const xp = pos(x.v); let lane = 0;
+      while (placed.some(p => p.lane === lane && Math.abs(p.x - xp) < 5)) lane++;
+      placed.push({ x:xp, lane, s:x.s, v:x.v });
+    });
+    const lanes = Math.max(...placed.map(p => p.lane)) + 1;
+    const h = 8 + lanes * 16;
+    const dots = placed.map(p => `<span class="dot" title="${esc(p.s.name)}: ${fmt(p.v, m.dp)}${esc(m.unit)}" style="left:${p.x}%;top:${4 + p.lane * 16}px;background:${p.s.color}"></span>`).join("");
+    const band = list.length > 1 ? `<div class="band" style="left:${pos(mn)}%;width:${Math.max(0.5, pos(mx) - pos(mn))}%"></div>` : "";
+    const rng = list.length > 1 ? `${fmt(mn, m.dp)}–${fmt(mx, m.dp)}${esc(m.unit)} across ${list.length}` : "1 source";
+    const edge = v => fmt(v, m.kind === "rain" ? 1 : 0) + m.unit;
+    return `<div class="strip">
+      <div class="shead"><span class="slbl">${m.label}</span><span class="sval num">${fmt(a.avg, m.dp)}${esc(m.unit)}</span><span class="srng num">${rng}</span></div>
+      <div class="track" style="height:${h}px">${band}<div class="avgline" style="left:${pos(a.avg)}%"></div>${dots}</div>
+      <div class="scale num"><span>${esc(edge(d0))}</span><span>${esc(edge(d1))}</span></div>
+    </div>`;
+  }).join("");
+  box.innerHTML = html;
+  box.hidden = !html;
+}
+
+function renderSources(){
+  $("sources").innerHTML = SOURCES.map(s => {
+    const r = run.results[s.id];
+    let status, body = "", note = "";
+    if (r.status === "pending") status = `<span class="status"><span class="pulse"></span>Loading</span>`;
+    else if (r.status === "ok"){
+      status = `<span class="status">${esc(r.condition || "")}</span>`;
+      body = `<div class="svals">` + METRICS.filter(m => r.vals[m.key] !== null)
+        .map(m => `<span>${m.label} <b class="num">${fmt(r.vals[m.key], m.dp)}${esc(m.unit)}</b></span>`).join("") + `</div>`;
+    }
+    else if (r.status === "miss") status = `<span class="status miss">No data</span>`;
+    else status = `<span class="status err">Unavailable</span>`;
+    if (r.note) note = `<p class="snote">${esc(r.note)}</p>`;
+    return `<li><span class="sw" style="background:${s.color}" aria-hidden="true"></span><div class="sbody"><div class="stop"><span class="sname">${s.name}</span>${status}</div>${body}${note}</div></li>`;
+  }).join("");
+}
+
+// ---------- inputs ----------
+function useLocation(){
+  if (!navigator.geolocation){ setMsg("This browser doesn’t share location. Type a city or address instead.", true); return; }
+  setMsg("Getting your location…");
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const lat = pos.coords.latitude, lon = pos.coords.longitude;
+    save({ mode:"geo" });
+    setMsg("");
+    start(lat, lon, "Your location");
+    const label = await reverse(lat, lon);
+    if (label){ run.label = label; render(); }
+  }, err => {
+    const why = err.code === 1 ? "Location access is off for this site." : "Your location couldn’t be found.";
+    setMsg(why + " Type a city, ZIP or address instead.", true);
+  }, { enableHighAccuracy:false, timeout:15000, maximumAge:600000 });
+}
+
+async function goTyped(){
+  const q = $("place").value.trim();
+  if (!q){ setMsg("Type a city, ZIP or address first.", true); $("place").focus(); return; }
+  setMsg("Finding " + q + "…");
+  setBusy(true);
+  try {
+    const g = await geocode(q);
+    if (!g){ setMsg("That place couldn’t be found. Try adding the state, like “Clearwater, FL”.", true); setBusy(false); return; }
+    setMsg("");
+    save({ mode:"place", q, lat:g.lat, lon:g.lon, label:g.label });
+    $("place").blur();
+    start(g.lat, g.lon, g.label);
+  } catch(e) {
+    setMsg("Place search isn’t responding right now. Try again in a moment.", true);
+    setBusy(false);
+  }
+}
+
+$("geoBtn").addEventListener("click", useLocation);
+$("goBtn").addEventListener("click", goTyped);
+$("place").addEventListener("keydown", e => { if (e.key === "Enter") goTyped(); });
+$("againBtn").addEventListener("click", () => { if (run.lat !== null) start(run.lat, run.lon, run.label); });
+
+// Reopen where you left off
+(async () => {
+  const last = load();
+  if (!last) return;
+  if (last.mode === "place"){
+    $("place").value = last.q || "";
+    start(last.lat, last.lon, last.label);
+  } else if (last.mode === "geo" && navigator.permissions){
+    try {
+      const p = await navigator.permissions.query({ name:"geolocation" });
+      if (p.state === "granted") useLocation();
+    } catch(e) {}
+  }
+})();
+</script>
+</body>
+</html>
