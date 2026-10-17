@@ -12,6 +12,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <style>
 :root{
   color-scheme: light;
@@ -99,6 +100,36 @@ input[type=text]{flex:1;min-width:0;font:inherit;font-size:16px;padding:10px 12p
 .hwind small{display:block;font-weight:400;font-size:.72rem;color:var(--muted)}
 .hday{padding:6px 14px;font-size:.8rem;font-weight:650;background:var(--track);border-bottom:1px solid var(--line)}
 
+.radar{margin-top:12px;padding:12px}
+.rhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.rhead h3{margin:0;font-size:1rem;font-weight:650}
+.rbtn{padding:6px 12px;font-size:.88rem}
+.rwrap{position:relative}
+.rmap{height:280px;border-radius:12px;overflow:hidden;background:var(--track)}
+.rlabel{position:absolute;top:8px;left:8px;z-index:800;padding:4px 10px;border-radius:999px;font-weight:650;font-size:.85rem;background:var(--ink);color:var(--surface);pointer-events:none}
+.rlabel.fc{background:var(--watch);color:#12313B}
+.rctrl{display:flex;gap:10px;align-items:center;margin-top:10px}
+.rctrl button{min-width:72px}
+.rslide{flex:1;position:relative}
+#rSlider{width:100%;-webkit-appearance:none;appearance:none;height:28px;background:transparent;margin:0}
+#rSlider::-webkit-slider-runnable-track{height:8px;border-radius:4px;background:linear-gradient(to right,var(--muted) 0 var(--split,50%),var(--watch) var(--split,50%) 100%)}
+#rSlider::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--surface);border:2px solid var(--ink);margin-top:-7px}
+#rSlider::-moz-range-track{height:8px;border-radius:4px;background:linear-gradient(to right,var(--muted) 0 var(--split,50%),var(--watch) var(--split,50%) 100%)}
+#rSlider::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--surface);border:2px solid var(--ink)}
+.rticks{position:relative;height:16px;font-size:.72rem;color:var(--muted)}
+.rticks span{position:absolute;top:0;white-space:nowrap}
+.rticks .mid{transform:translateX(-50%);color:var(--ink);font-weight:650}
+.rticks .end{right:0}
+.rscale{display:flex;align-items:center;gap:8px;font-size:.75rem;color:var(--muted);margin-top:8px}
+.ramp{flex:1;height:8px;border-radius:4px;background:linear-gradient(to right,#04e9e7,#019ff4,#0300f4,#02fd02,#01c501,#008e00,#fdf802,#e5bc00,#fd9500,#fd0000,#d40000,#bc0000,#f800fd,#9854c6)}
+.rnote{margin:6px 0 0;font-size:.78rem;color:var(--muted)}
+.radar.full{position:fixed;inset:0;z-index:2000;margin:0;border-radius:0;border:0;display:flex;flex-direction:column;
+  padding:calc(env(safe-area-inset-top,0px) + 10px) 12px calc(env(safe-area-inset-bottom,0px) + 12px)}
+.radar.full .rwrap{flex:1;display:flex;flex-direction:column}
+.radar.full .rmap{flex:1;height:auto}
+body.noscroll{overflow:hidden}
+.leaflet-container{font:inherit}
+
 details{margin-top:24px}
 summary{cursor:pointer;font-weight:650;padding:6px 0;list-style-position:inside}
 .strips{margin-top:10px;padding:6px 16px}
@@ -177,6 +208,23 @@ summary{cursor:pointer;font-weight:650;padding:6px 0;list-style-position:inside}
       </div>
     </div>
 
+    <section id="radar" class="radar card" hidden aria-label="Radar">
+      <div class="rhead"><h3>Radar</h3><button id="rFull" class="rbtn" type="button">Expand</button></div>
+      <div class="rwrap">
+        <div id="rMap" class="rmap"></div>
+        <span id="rLabel" class="rlabel">Radar now</span>
+      </div>
+      <div class="rctrl">
+        <button id="rPlay" class="rbtn primary" type="button">Play</button>
+        <div class="rslide">
+          <input id="rSlider" type="range" min="0" max="0" value="0" step="1" aria-label="Radar time">
+          <div class="rticks"><span>50 min ago</span><span id="rNowTick" class="mid">Now</span><span id="rEndTick" class="end">+3 h</span></div>
+        </div>
+      </div>
+      <div class="rscale"><span>Light</span><i class="ramp"></i><span>Heavy</span></div>
+      <p id="rNote" class="rnote">Gray part of the timeline is actual radar from the past 50 minutes. Orange is NOAA’s HRRR model forecast for the next 3 hours. U.S. only.</p>
+    </section>
+
     <h2 id="hoursTitle" hidden>Next 24 hours</h2>
     <ol id="hours" class="hours card" hidden></ol>
 
@@ -189,10 +237,11 @@ summary{cursor:pointer;font-weight:650;padding:6px 0;list-style-position:inside}
     <div class="actions">
       <button id="againBtn" type="button">Refresh</button>
     </div>
-    <p class="foot">Each hour is rated from the average of all sources. Avoid: rain chance 60% or more, 0.1 in of rain or more, most forecasts showing rain, storms in two or more sources, or gusts of 35 mph or more. Watch: rain chance 30% or more, two or more forecasts showing rain, any storm signal, gusts of 25 mph or more, or 45° and colder. Weather data from <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, the <a href="https://www.weather.gov/" target="_blank" rel="noopener">National Weather Service</a> and Google; place search from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>.</p>
+    <p class="foot">Each hour is rated from the average of all sources. Avoid: rain chance 60% or more, 0.1 in of rain or more, most forecasts showing rain, storms in two or more sources, or gusts of 35 mph or more. Watch: rain chance 30% or more, two or more forecasts showing rain, any storm signal, gusts of 25 mph or more, or 45° and colder. Weather data from <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, the <a href="https://www.weather.gov/" target="_blank" rel="noopener">National Weather Service</a> and Google; place search and map from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> and <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>; radar from NOAA via the <a href="https://mesonet.agron.iastate.edu/" target="_blank" rel="noopener">Iowa Environmental Mesonet</a>.</p>
   </section>
 </main>
 
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // Your Cloudflare Worker that holds the Google key
 const GOOGLE_PROXY = "https://ride-forecast.raina-dejute.workers.dev/";
@@ -469,6 +518,7 @@ function start(lat, lon, label){
   $("results").hidden = false;
   setBusy(true);
   render();
+  try { updateRadar(lat, lon); } catch(e) { console.error(e); }
   const myRun = run.id;
   checkSource(SOURCES.find(s => s.kind === "nws"), myRun);
   checkSource(SOURCES.find(s => s.kind === "google"), myRun);
@@ -706,6 +756,143 @@ function renderSources(){
     return `<li><span class="sw" style="background:${s.color}" aria-hidden="true"></span><div class="sbody"><div class="stop"><span class="sname">${s.name}</span>${status}</div>${body}${note}</div></li>`;
   }).join("");
 }
+
+// ---------- radar ----------
+const IEM_TILES = "https://{s}.agron.iastate.edu/cache/tile.py/1.0.0/";
+const IEM_SUBS = ["mesonet1", "mesonet2", "mesonet3"];
+const HRRR_META = "https://mesonet.agron.iastate.edu/data/gis/images/4326/hrrr/refd_1080.json";
+const RADAR_HOURS_AHEAD = 3;
+const R = { map:null, marker:null, layers:[], frames:[], idx:0, timer:null, hold:0, full:false, build:0, split:0 };
+
+function utcStamp(d){
+  const p = n => String(n).padStart(2, "0");
+  return d.getUTCFullYear() + p(d.getUTCMonth() + 1) + p(d.getUTCDate()) + p(d.getUTCHours()) + p(d.getUTCMinutes());
+}
+async function hrrrInit(){
+  try {
+    const j = await getJSON(HRRR_META);
+    const d = new Date(j && j.model_init_utc);
+    if (!isNaN(d)) return d;
+  } catch(e) {}
+  // Fallback: a run is ready about 1 h 50 min after it starts
+  const d = new Date(Date.now() - 110 * 60000);
+  d.setUTCMinutes(0, 0, 0);
+  return d;
+}
+async function buildFrames(){
+  const frames = [];
+  for (let m = 50; m >= 0; m -= 5){
+    frames.push({ fc:false, name: m ? `nexrad-n0q-900913-m${String(m).padStart(2, "0")}m` : "nexrad-n0q-900913",
+                  label: m ? `Radar ${m} min ago` : "Radar now" });
+  }
+  const init = await hrrrInit();
+  const now = Date.now(), stop = now + RADAR_HOURS_AHEAD * 3600000;
+  for (let f = 0; f <= 1080; f += 15){
+    const t = init.getTime() + f * 60000;
+    if (t <= now + 5 * 60000) continue;
+    if (t > stop) break;
+    frames.push({ fc:true, name:`hrrr::REFD-F${String(f).padStart(4, "0")}-${utcStamp(init)}`,
+                  label: "Forecast " + new Date(t).toLocaleTimeString("en-US", { hour:"numeric", minute:"2-digit" }) });
+  }
+  return frames;
+}
+function radarLayer(name){
+  return L.tileLayer(IEM_TILES + name + "/{z}/{x}/{y}.png", { subdomains:IEM_SUBS, opacity:0, zIndex:5, maxZoom:11 });
+}
+function ensureMap(lat, lon){
+  if (R.map) return true;
+  if (!window.L){ $("rNote").textContent = "The radar map couldn’t load. Check your connection and tap Refresh."; return false; }
+  const dark = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches;
+  const style = dark ? "dark" : "light";
+  R.map = L.map("rMap", { zoomControl:false, dragging:false, touchZoom:false, scrollWheelZoom:false,
+    doubleClickZoom:false, boxZoom:false, keyboard:false, tap:false }).setView([lat, lon], 8);
+  R.map.attributionControl.setPrefix(false);
+  L.tileLayer(`https://{s}.basemaps.cartocdn.com/${style}_nolabels/{z}/{x}/{y}{r}.png`,
+    { subdomains:"abcd", maxZoom:11, zIndex:1, attribution:"© OpenStreetMap © CARTO, radar NOAA/IEM" }).addTo(R.map);
+  R.map.createPane("labels");
+  R.map.getPane("labels").style.zIndex = 650;
+  R.map.getPane("labels").style.pointerEvents = "none";
+  L.tileLayer(`https://{s}.basemaps.cartocdn.com/${style}_only_labels/{z}/{x}/{y}{r}.png`,
+    { subdomains:"abcd", maxZoom:11, pane:"labels" }).addTo(R.map);
+  R.marker = L.circleMarker([lat, lon], { radius:7, color:"#FFFFFF", weight:2, fillColor:"#0072B2", fillOpacity:1 }).addTo(R.map);
+  R.map.on("click", () => { if (!R.full) setRadarFull(true); });
+  return true;
+}
+function showFrame(i){
+  if (!R.frames.length) return;
+  R.idx = Math.max(0, Math.min(R.frames.length - 1, i));
+  R.layers.forEach((l, j) => { if (l) l.setOpacity(j === R.idx ? 0.75 : 0); });
+  const f = R.frames[R.idx];
+  const lbl = $("rLabel");
+  lbl.textContent = f.label;
+  lbl.classList.toggle("fc", f.fc);
+  $("rSlider").value = R.idx;
+}
+function ensureLayers(){
+  R.frames.forEach((f, i) => { if (!R.layers[i]) R.layers[i] = radarLayer(f.name).addTo(R.map); });
+}
+function stopRadar(){
+  if (R.timer){ clearInterval(R.timer); R.timer = null; }
+  $("rPlay").textContent = "Play";
+}
+function playRadar(){
+  if (!R.map || !R.frames.length) return;
+  ensureLayers();
+  if (R.idx >= R.frames.length - 1) showFrame(0);
+  $("rPlay").textContent = "Pause";
+  R.hold = 0;
+  R.timer = setInterval(() => {
+    if (R.idx >= R.frames.length - 1){
+      if (++R.hold < 3) return;       // linger on the last frame
+      R.hold = 0; showFrame(0); return;
+    }
+    if (R.idx === R.split - 1 && ++R.hold < 2) return;   // brief pause at "now"
+    R.hold = 0;
+    showFrame(R.idx + 1);
+  }, 600);
+}
+function setRadarFull(on){
+  if (!R.map) return;
+  R.full = on;
+  $("radar").classList.toggle("full", on);
+  document.body.classList.toggle("noscroll", on);
+  $("rFull").textContent = on ? "Close" : "Expand";
+  ["dragging", "touchZoom", "doubleClickZoom"].forEach(h => on ? R.map[h].enable() : R.map[h].disable());
+  if (on && !R.zoomCtl) R.zoomCtl = L.control.zoom({ position:"bottomright" });
+  if (R.zoomCtl) on ? R.zoomCtl.addTo(R.map) : R.zoomCtl.remove();
+  setTimeout(() => {
+    R.map.invalidateSize();
+    if (!on) R.map.setView(R.marker.getLatLng(), 8);
+  }, 60);
+}
+async function updateRadar(lat, lon){
+  $("radar").hidden = false;
+  if (!ensureMap(lat, lon)) return;
+  stopRadar();
+  R.map.setView([lat, lon], R.full ? R.map.getZoom() : 8);
+  R.marker.setLatLng([lat, lon]);
+  R.map.invalidateSize();
+  const build = ++R.build;
+  const frames = await buildFrames();
+  if (build !== R.build) return;
+  R.layers.forEach(l => l && R.map.removeLayer(l));
+  R.frames = frames;
+  R.layers = [];
+  R.split = frames.filter(f => !f.fc).length;
+  const slider = $("rSlider");
+  slider.max = frames.length - 1;
+  const pct = frames.length > 1 ? ((R.split - 1) / (frames.length - 1)) * 100 : 100;
+  slider.style.setProperty("--split", pct + "%");
+  $("rNowTick").style.left = pct + "%";
+  const fcCount = frames.length - R.split;
+  $("rEndTick").textContent = fcCount ? "+" + Math.round(fcCount * 15 / 60 * 10) / 10 + " h" : "";
+  // only the latest radar loads until Play is tapped
+  R.layers[R.split - 1] = radarLayer(frames[R.split - 1].name).addTo(R.map);
+  showFrame(R.split - 1);
+}
+$("rPlay").addEventListener("click", () => R.timer ? stopRadar() : playRadar());
+$("rFull").addEventListener("click", () => setRadarFull(!R.full));
+$("rSlider").addEventListener("input", e => { stopRadar(); if (R.map){ ensureLayers(); showFrame(+e.target.value); } });
 
 // ---------- inputs ----------
 function useLocation(){
