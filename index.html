@@ -140,7 +140,7 @@ summary{cursor:pointer;font-weight:650;padding:6px 0;list-style-position:inside}
 <main>
   <header>
     <h1>Ride forecast</h1>
-    <p class="sub">Hour-by-hour rain, wind and temperature, averaged from the National Weather Service and six major weather models.</p>
+    <p class="sub">Hour-by-hour rain, wind and temperature, averaged from the National Weather Service, Google and six major weather models.</p>
   </header>
 
   <section class="locate card" aria-label="Choose a location">
@@ -189,17 +189,21 @@ summary{cursor:pointer;font-weight:650;padding:6px 0;list-style-position:inside}
     <div class="actions">
       <button id="againBtn" type="button">Refresh</button>
     </div>
-    <p class="foot">Each hour is rated from the average of all sources. Avoid: rain chance 60% or more, 0.1 in of rain or more, most models showing rain, storms in two or more sources, or gusts of 35 mph or more. Watch: rain chance 30% or more, two or more models showing rain, any storm signal, gusts of 25 mph or more, or 45° and colder. Weather data from <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> and the <a href="https://www.weather.gov/" target="_blank" rel="noopener">National Weather Service</a>; place search from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>.</p>
+    <p class="foot">Each hour is rated from the average of all sources. Avoid: rain chance 60% or more, 0.1 in of rain or more, most forecasts showing rain, storms in two or more sources, or gusts of 35 mph or more. Watch: rain chance 30% or more, two or more forecasts showing rain, any storm signal, gusts of 25 mph or more, or 45° and colder. Weather data from <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, the <a href="https://www.weather.gov/" target="_blank" rel="noopener">National Weather Service</a> and Google; place search from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>.</p>
   </section>
 </main>
 
 <script>
+// Your Cloudflare Worker that holds the Google key
+const GOOGLE_PROXY = "https://ride-forecast.raina-dejute.workers.dev/";
+
 // Ride rating thresholds; adjust to taste
 const RIDE = { avoidRain:60, watchRain:30, avoidInches:0.1, watchModels:2, avoidGust:35, watchGust:25, coldF:45 };
 const HOURS_SHOWN = 24;
 
 const SOURCES = [
   { id:"nws",                  name:"National Weather Service",   color:"var(--ink)", kind:"nws" },
+  { id:"google",               name:"Google Weather",             color:"#999999",    kind:"google" },
   { id:"ecmwf_ifs025",         name:"European model (ECMWF)",     color:"#E69F00" },
   { id:"gfs_seamless",         name:"U.S. model (GFS)",           color:"#56B4E9" },
   { id:"icon_seamless",        name:"German model (ICON)",        color:"#009E73" },
@@ -386,7 +390,7 @@ function applyOk(src, r){
   const any = METRICS.some(m => has(r.vals[m.key])) || anyHour;
   run.results[src.id] = { status: any ? "ok" : "miss", vals:r.vals, condition:r.condition, hours:r.hours,
     note: any ? null : "This model has no forecast for this spot." };
-  if (any && r.nowKey && (src.kind !== "nws" || !run.nowKey)) run.nowKey = r.nowKey;
+  if (any && r.nowKey && (!src.kind || !run.nowKey)) run.nowKey = r.nowKey;
 }
 function applyErr(src, e){
   const msg = e && e.message === "Load failed" ? "Connection dropped. Tap Refresh to try again." : (e && e.message) || "Couldn’t load.";
@@ -396,10 +400,50 @@ function afterUpdate(){
   if (SOURCES.every(s => run.results[s.id].status !== "pending")){ run.at = run.at || new Date(); setBusy(false); }
   render();
 }
+async function fetchGoogle(lat, lon){
+  const j = await getJSON(GOOGLE_PROXY + "?lat=" + lat.toFixed(4) + "&lon=" + lon.toFixed(4));
+  const list = (j && j.forecastHours) || [];
+  if (!list.length) throw new Error("Google returned no hourly data.");
+  const pad = n => String(n).padStart(2, "0");
+  const keyOf = d => d ? `${d.year}-${pad(d.month)}-${pad(d.day)}T${pad(d.hours)}` : null;
+  const temp = t => t && has(t.degrees) ? (t.unit === "CELSIUS" ? t.degrees * 9 / 5 + 32 : t.degrees) : null;
+  const speed = w => w && has(w.value) ? (w.unit === "KILOMETERS_PER_HOUR" ? w.value / 1.609 : w.value) : null;
+  const inches = q => q && has(q.quantity) ? (q.unit === "MILLIMETERS" ? q.quantity / 25.4 : q.quantity) : null;
+  const hours = {};
+  list.forEach(h => {
+    const k = keyOf(h.displayDateTime); if (!k) return;
+    const p = h.precipitation || {}, w = h.wind || {};
+    const type = (h.weatherCondition && h.weatherCondition.type) || "";
+    hours[k] = {
+      temp: temp(h.temperature),
+      pop: p.probability ? toNum(p.probability.percent) : null,
+      precip: inches(p.qpf),
+      code: null,
+      thunder: /THUNDER/.test(type) || (toNum(h.thunderstormProbability) || 0) >= 50,
+      wind: speed(w.speed), gust: speed(w.gust)
+    };
+  });
+  const first = list[0], firstKey = keyOf(first.displayDateTime);
+  const today = list.filter(h => keyOf(h.displayDateTime).slice(0, 10) === firstKey.slice(0, 10));
+  const pops = today.map(h => h.precipitation && h.precipitation.probability ? toNum(h.precipitation.probability.percent) : null).filter(has);
+  return {
+    vals: {
+      temp_now: temp(first.temperature), feels_like: temp(first.feelsLikeTemperature),
+      humidity: toNum(first.relativeHumidity), wind_mph: speed(first.wind && first.wind.speed),
+      high: null, low: null, rain_chance: pops.length ? Math.max(...pops) : null,
+      rain_amount: null, uv_index: null
+    },
+    condition: first.weatherCondition && first.weatherCondition.description ? first.weatherCondition.description.text : null,
+    hours, nowKey: firstKey
+  };
+}
+
 async function checkSource(src, myRun){
   const lat = run.lat, lon = run.lon;
   try {
-    const r = src.kind === "nws" ? await withRetry(() => fetchNWS(lat, lon)) : await fetchModel(src, lat, lon);
+    const r = src.kind === "nws" ? await withRetry(() => fetchNWS(lat, lon))
+            : src.kind === "google" ? await withRetry(() => fetchGoogle(lat, lon))
+            : await fetchModel(src, lat, lon);
     if (myRun !== run.id) return;
     applyOk(src, r);
   } catch(e) {
@@ -409,7 +453,7 @@ async function checkSource(src, myRun){
   afterUpdate();
 }
 async function checkModels(myRun){
-  const queue = SOURCES.filter(s => s.kind !== "nws");
+  const queue = SOURCES.filter(s => !s.kind);
   const worker = async () => {
     while (queue.length){
       if (myRun !== run.id) return;
@@ -427,6 +471,7 @@ function start(lat, lon, label){
   render();
   const myRun = run.id;
   checkSource(SOURCES.find(s => s.kind === "nws"), myRun);
+  checkSource(SOURCES.find(s => s.kind === "google"), myRun);
   checkModels(myRun);
   setTimeout(() => {
     if (myRun !== run.id) return;
@@ -555,7 +600,7 @@ function renderHourly(){
     const subs = [];
     subs.push(`<b class="num">${has(rp) ? Math.round(rp) + "%" : "--"}</b>`);
     if (has(a.popMin) && a.popMax - a.popMin >= 15) subs.push(`<span class="num">${Math.round(a.popMin)}–${Math.round(a.popMax)}%</span>`);
-    if (a.wetOf) subs.push(`<span>${a.wet} of ${a.wetOf} models show rain</span>`);
+    if (a.wetOf) subs.push(`<span>${a.wet} of ${a.wetOf} forecasts show rain</span>`);
     if (has(a.precip) && a.precip >= 0.01) subs.push(`<span class="num">${a.precip.toFixed(2)} in</span>`);
     if (a.thunder) subs.push(`<span>Storm signal</span>`);
     html += `<li class="hr lv${r.level}">
