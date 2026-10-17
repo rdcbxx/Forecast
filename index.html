@@ -241,7 +241,7 @@ function load(){ try { return JSON.parse(localStorage.getItem(STORE) || "null");
 
 async function getJSON(url){
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 25000);
+  const timer = setTimeout(() => ctrl.abort(), 12000);
   try {
     const res = await fetch(url, { signal: ctrl.signal });
     let body = null;
@@ -258,14 +258,14 @@ async function getJSON(url){
   } finally { clearTimeout(timer); }
 }
 
-async function withRetry(fn, tries = 3){
+async function withRetry(fn, tries = 2){
   let last;
   for (let t = 0; t < tries; t++){
     try { return await fn(); }
     catch(e) {
       last = e;
       if (e.status && e.status >= 400 && e.status < 500 && e.status !== 429) break;
-      if (t < tries - 1) await new Promise(r => setTimeout(r, 1500 * (t + 1)));
+      if (t < tries - 1) await new Promise(r => setTimeout(r, 1000 * (t + 1)));
     }
   }
   throw last;
@@ -388,8 +388,8 @@ function applyErr(src, e){
   run.results[src.id] = { status:"err", note: msg };
 }
 function afterUpdate(){
+  if (SOURCES.every(s => run.results[s.id].status !== "pending")){ run.at = run.at || new Date(); setBusy(false); }
   render();
-  if (SOURCES.every(s => run.results[s.id].status !== "pending")){ run.at = new Date(); setBusy(false); render(); }
 }
 async function checkSource(src, myRun){
   const lat = run.lat, lon = run.lon;
@@ -404,16 +404,14 @@ async function checkSource(src, myRun){
   afterUpdate();
 }
 async function checkModels(myRun){
-  const models = SOURCES.filter(s => s.kind !== "nws");
-  const lat = run.lat, lon = run.lon;
-  let j = null;
-  try { j = await withRetry(() => getJSON(modelURL(models.map(s => s.id), lat, lon)), 2); } catch(e) {}
-  if (myRun !== run.id) return;
-  if (!j){ models.forEach(s => checkSource(s, myRun)); return; }
-  models.forEach(s => {
-    try { applyOk(s, parseModel(j, s.id)); } catch(e) { applyErr(s, e); }
-  });
-  afterUpdate();
+  const queue = SOURCES.filter(s => s.kind !== "nws");
+  const worker = async () => {
+    while (queue.length){
+      if (myRun !== run.id) return;
+      await checkSource(queue.shift(), myRun);
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
 }
 
 function start(lat, lon, label){
@@ -422,8 +420,20 @@ function start(lat, lon, label){
   $("results").hidden = false;
   setBusy(true);
   render();
-  checkSource(SOURCES.find(s => s.kind === "nws"), run.id);
-  checkModels(run.id);
+  const myRun = run.id;
+  checkSource(SOURCES.find(s => s.kind === "nws"), myRun);
+  checkModels(myRun);
+  setTimeout(() => {
+    if (myRun !== run.id) return;
+    let changed = false;
+    SOURCES.forEach(s => {
+      if (run.results[s.id].status === "pending"){
+        run.results[s.id] = { status:"err", note:"Didn’t respond in time. Tap Refresh to try again." };
+        changed = true;
+      }
+    });
+    if (changed) afterUpdate();
+  }, 60000);
 }
 
 // ---------- daily averaging ----------
@@ -555,6 +565,13 @@ function renderHourly(){
 
 // ---------- rendering ----------
 function render(){
+  try { renderAll(); }
+  catch(e) {
+    console.error(e);
+    $("basis").textContent = "Something went wrong showing the forecast: " + e.message;
+  }
+}
+function renderAll(){
   const res = run.results;
   const done = SOURCES.filter(s => res[s.id].status !== "pending").length;
   const okCount = SOURCES.filter(s => res[s.id].status === "ok").length;
@@ -573,7 +590,7 @@ function render(){
   let basis;
   if (done < SOURCES.length) basis = `Loading ${done} of ${SOURCES.length} sources…`;
   else if (!okCount) basis = "No source returned a forecast. Try a nearby city.";
-  else basis = `Average of ${hero ? hero.n : okCount} ${hero && hero.n === 1 ? "source" : "sources"}. Updated ${run.at.toLocaleTimeString("en-US", { hour:"numeric", minute:"2-digit" })}.`;
+  else basis = `Average of ${hero ? hero.n : okCount} ${hero && hero.n === 1 ? "source" : "sources"}. Updated ${(run.at || new Date()).toLocaleTimeString("en-US", { hour:"numeric", minute:"2-digit" })}.`;
   $("basis").textContent = basis;
 
   renderHourly();
